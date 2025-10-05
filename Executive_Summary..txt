@@ -1,0 +1,18 @@
+# Apple Financial Executive Dashboard (2009–2022)
+
+An interactive **data visualization dashboard** built using Python, Dash, and Plotly to analyze Apple’s revenue, profit, and performance metrics.
+
+## 📊 Features
+- KPI cards for quick financial insights  
+- Trend analysis of Revenue & Profit (2009–2022)  
+- Profit share visualization  
+- Fully responsive dark-themed UI
+
+## 🧰 Tech Stack
+Python | Dash | Plotly | Pandas | HTML | CSS
+
+## 🚀 Run Locally
+1. Clone this repository
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
