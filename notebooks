@@ -1,323 +1,802 @@
 import dash
-from dash import dcc, html
+from dash import dcc, html, Input, Output, State, callback, ctx, dash_table
 import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
+import dash_bootstrap_components as dbc
+import numpy as np
+from datetime import datetime, timedelta
+import math
 
-# Sample data 
+# Enhanced sample data with more metrics
+np.random.seed(42)
 df = pd.DataFrame({
-   
-    'Year': list(range(2009, 2023)),
-    'Revenue': [42905, 65225, 108249, 156508, 170910, 182795, 233715, 215639, 229234, 265595, 260174, 274515, 365817, 394328],
-    'Profit': [8235, 14013, 25922, 41733, 37037, 39510, 53394, 45687, 48351, 59531, 55256, 57411, 94680, 99803],
-    'Employees': [36800, 49400, 63300, 76100, 84400, 97000, 110000, 116000, 123000, 132000, 137000, 147000, 154000, 164000],
-    'ROE': [26.03, 29.32, 33.83, 35.30, 29.98, 35.42, 44.74, 35.62, 36.07, 55.56, 61.06, 87.87, 150.07, 196.96]
+    'Year': list(range(2009, 2024)),
+    'Revenue': [42905, 65225, 108249, 156508, 170910, 182795, 233715, 215639, 229234, 265595, 260174, 274515, 365817, 394328, 383285],
+    'Profit': [8235, 14013, 25922, 41733, 37037, 39510, 53394, 45687, 48351, 59531, 55256, 57411, 94680, 99803, 96995],
+    'Employees': [36800, 49400, 63300, 76100, 84400, 97000, 110000, 116000, 123000, 132000, 137000, 147000, 154000, 164000, 161000],
+    'ROE': [26.03, 29.32, 33.83, 35.30, 29.98, 35.42, 44.74, 35.62, 36.07, 55.56, 61.06, 87.87, 150.07, 196.96, 165.42],
+    'R&D_Spend': [1375, 1782, 2429, 3381, 4475, 6045, 8137, 10045, 11581, 14236, 16217, 18752, 21914, 26251, 29915],
+    'Market_Cap': [189000, 295000, 376000, 456000, 541000, 642000, 741000, 652000, 750000, 890000, 1120000, 1280000, 2250000, 2850000, 2780000]
 })
+
+# Calculate additional metrics
 df['Profit_Margin'] = (df['Profit'] / df['Revenue']) * 100
+df['R&D_Intensity'] = (df['R&D_Spend'] / df['Revenue']) * 100
+df['Revenue_Per_Employee'] = df['Revenue'] / df['Employees']
 
-# Initialize the Dash app
-app = dash.Dash(__name__)
-app.title = "Apple Financial Executive Dashboard"
+# Generate realistic quarterly data
+def generate_quarterly_data(yearly_df):
+    quarters = []
+    for year in yearly_df['Year']:
+        year_data = yearly_df[yearly_df['Year'] == year].iloc[0]
+        base_revenue = year_data['Revenue'] / 4
+        base_profit = year_data['Profit'] / 4
+        
+        quarterly_pattern = [
+            np.random.normal(0.85, 0.02),
+            np.random.normal(0.90, 0.02),  
+            np.random.normal(0.95, 0.02),
+            np.random.normal(1.30, 0.03)
+        ]
+        
+        for qtr, multiplier in enumerate(quarterly_pattern, 1):
+            quarters.append({
+                'Date': pd.Timestamp(f'{year}-{qtr*3:02d}-01'),
+                'Quarter': f'{year} Q{qtr}',
+                'Revenue': base_revenue * multiplier,
+                'Profit': base_profit * multiplier,
+                'Product_Launch': 1 if qtr in [1, 4] and np.random.random() > 0.7 else 0
+            })
+    
+    quarterly_df = pd.DataFrame(quarters)
+    quarterly_df['Profit_Margin'] = (quarterly_df['Profit'] / quarterly_df['Revenue']) * 100
+    return quarterly_df
 
-# Apple color scheme
-colors = {
-    'background': '#1d1d1f',
-    'card_bg': '#2d2d2f',
-    'text': '#ffffff',
-    'primary': '#007AFF',
-    'green': '#32D74B',
-    'orange': '#FF9F0A',
-    'purple': '#BF5AF2',
-    'gray': '#8E8E93'
+quarterly_data = generate_quarterly_data(df)
+
+# Generate product category data
+products = ['iPhone', 'Mac', 'iPad', 'Wearables', 'Services']
+product_data = []
+for year in df['Year']:
+    base_revenue = df[df['Year'] == year]['Revenue'].iloc[0]
+    if year <= 2010:
+        mix = [0.45, 0.35, 0.15, 0.02, 0.03]
+    elif year <= 2015:
+        mix = [0.60, 0.20, 0.12, 0.03, 0.05]
+    elif year <= 2020:
+        mix = [0.55, 0.10, 0.08, 0.10, 0.17]
+    else:
+        mix = [0.48, 0.08, 0.07, 0.12, 0.25]
+    
+    mix = [m * np.random.uniform(0.95, 1.05) for m in mix]
+    mix = [m / sum(mix) for m in mix]
+    
+    for product, percentage in zip(products, mix):
+        product_data.append({
+            'Year': year,
+            'Product': product,
+            'Revenue': base_revenue * percentage,
+            'Marketshare': np.random.uniform(15, 45) if product == 'iPhone' else np.random.uniform(5, 25)
+        })
+
+product_df = pd.DataFrame(product_data)
+
+# Color scheme
+COLOR_SCHEMES = {
+    'dark': {
+        'background': 'linear-gradient(135deg, #000000 0%, #1a1a1a 50%, #2d2d2d 100%)',
+        'card_bg': 'rgba(28, 28, 30, 0.7)',
+        'card_glass': 'rgba(44, 44, 46, 0.6)',
+        'text_primary': '#ffffff',
+        'text_secondary': 'rgba(235, 235, 245, 0.8)',
+        'accent_blue': 'rgba(10, 132, 255, 1)',
+        'accent_green': 'rgba(48, 209, 88, 1)',
+        'accent_orange': 'rgba(255, 159, 10, 1)',
+        'accent_purple': 'rgba(191, 90, 242, 1)',
+        'accent_teal': 'rgba(100, 210, 255, 1)',
+        'grid_color': 'rgba(120, 120, 128, 0.3)',
+        'border_color': 'rgba(255, 255, 255, 0.15)',
+        'gradient_blue': 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
+        'gradient_green': 'linear-gradient(135deg, #34C759 0%, #32D74B 100%)',
+    },
+    'light': {
+        'background': 'linear-gradient(135deg, #ffffff 0%, #f2f2f7 50%, #e5e5ea 100%)',
+        'card_bg': 'rgba(242, 242, 247, 0.9)',
+        'card_glass': 'rgba(255, 255, 255, 0.8)',
+        'text_primary': '#1d1d1f',
+        'text_secondary': 'rgba(60, 60, 67, 0.8)',
+        'accent_blue': 'rgba(0, 122, 255, 1)',
+        'accent_green': 'rgba(52, 199, 89, 1)',
+        'accent_orange': 'rgba(255, 149, 0, 1)',
+        'accent_purple': 'rgba(175, 82, 222, 1)',
+        'accent_teal': 'rgba(90, 200, 250, 1)',
+        'grid_color': 'rgba(120, 120, 128, 0.2)',
+        'border_color': 'rgba(0, 0, 0, 0.1)',
+        'gradient_blue': 'linear-gradient(135deg, #007AFF 0%, #5856D6 100%)',
+        'gradient_green': 'linear-gradient(135deg, #34C759 0%, #32D74B 100%)',
+    }
 }
 
-# KPI Cards function
-def kpi_card(title, value, suffix='', color='#007AFF'):
-    return html.Div(
-        style={
-            'background': colors['card_bg'],
-            'padding': '20px',
-            'borderRadius': '12px',
-            'margin': '8px',
-            'display': 'flex',
-            'flexDirection': 'column',
-            'alignItems': 'center',
-            'justifyContent': 'center',
-            'width': '180px',
-            'minWidth': '180px',
-            'height': '120px',
-            'border': f'1px solid {colors["gray"]}'
-        },
-        children=[
-            html.Div(title, style={
-                'color': colors['gray'], 
-                'fontSize': '14px', 
-                'marginBottom': '8px',
-                'textAlign': 'center'
-            }),
-            html.Div(f"{value}{suffix}", style={
-                'fontSize': '28px', 
-                'color': color,
-                'fontWeight': 'bold',
-                'textAlign': 'center'
+# Initialize the Dash app
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app.title = "Apple Vision Pro Financial Dashboard"
+server = app.server
+
+# Enhanced CSS
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600;700;800;900&display=swap');
+            
+            * {
+                font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+            }
+            
+            .glass-card {
+                backdrop-filter: blur(40px) saturate(180%);
+                -webkit-backdrop-filter: blur(40px) saturate(180%);
+                border-radius: 24px;
+                border: 1px solid rgba(255, 255, 255, 0.125);
+                transition: all 0.4s ease;
+            }
+            
+            .glass-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+
+def get_glass_style(theme):
+    colors = COLOR_SCHEMES[theme]
+    return {
+        'background': colors['card_glass'],
+        'backdropFilter': 'blur(40px) saturate(180%)',
+        'borderRadius': '24px',
+        'border': f'1px solid {colors["border_color"]}',
+        'boxShadow': '0 8px 32px 0 rgba(0, 0, 0, 0.1)',
+        'padding': '20px',
+        'margin': '10px'
+    }
+
+def create_glass_card(children, theme='dark', style=None):
+    base_style = get_glass_style(theme)
+    if style:
+        base_style.update(style)
+    return html.Div(children, style=base_style, className="glass-card")
+
+def create_kpi_card(title, value, suffix='', change=None, theme='dark', color='accent_blue'):
+    colors = COLOR_SCHEMES[theme]
+    
+    change_element = html.Div()
+    if change is not None:
+        change_color = colors['accent_green'] if change >= 0 else colors['accent_orange']
+        change_icon = "↗" if change >= 0 else "↘"
+        change_element = html.Div([
+            html.Span(f"{change_icon} {abs(change):.1f}%", style={
+                'color': change_color,
+                'fontSize': '14px',
+                'fontWeight': '600',
+                'marginTop': '5px'
             })
-        ]
+        ])
+    
+    return create_glass_card([
+        html.Div(title, style={
+            'color': colors['text_secondary'], 
+            'fontSize': '12px', 
+            'fontWeight': '600',
+            'marginBottom': '8px',
+            'textTransform': 'uppercase'
+        }),
+        html.Div([
+            html.Span(value, style={
+                'fontSize': '28px', 
+                'color': colors['text_primary'],
+                'fontWeight': '700'
+            }),
+            html.Span(suffix, style={
+                'fontSize': '16px',
+                'color': colors[color],
+                'fontWeight': '600',
+                'marginLeft': '4px'
+            })
+        ]),
+        change_element
+    ], theme, {
+        'textAlign': 'center',
+        'minWidth': '200px',
+        'minHeight': '120px',
+        'display': 'flex',
+        'flexDirection': 'column',
+        'justifyContent': 'center'
+    })
+
+def create_chart_layout(title, theme='dark', height=400):
+    colors = COLOR_SCHEMES[theme]
+    return dict(
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=colors['text_primary'], family='SF Pro Display, sans-serif'),
+        title=dict(text=title, x=0.05, font=dict(size=20, color=colors['text_primary'])),
+        height=height,
+        margin=dict(t=60, b=60, l=60, r=60),
+        showlegend=True,
+        legend=dict(
+            bgcolor='rgba(0,0,0,0)',
+            font=dict(color=colors['text_secondary'])
+        )
     )
 
-# App layout
-app.layout = html.Div(
-    style={
-        'fontFamily': 'Arial, sans-serif', 
-        'background': colors['background'], 
-        'padding': '20px', 
-        'minHeight': '100vh',
-        'color': colors['text']
-    },
-    children=[
-        # Header
-        html.Div([
-            html.Img(
-                src='https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg',
-                style={
-                    'height': '50px', 
-                    'marginRight': '15px',
-                    'filter': 'invert(1)'  # Makes black logo white
-                }
-            ),
-            html.H1(
-                "Apple Financial Dashboard 2009-2022",
-                style={
-                    'color': colors['text'], 
-                    'fontWeight': 'bold',
-                    'margin': '0'
-                }
-            )
-        ], style={
-            'display': 'flex', 
-            'alignItems': 'center', 
-            'marginBottom': '30px'
-        }),
-
-        # KPI Cards Row
-        html.Div([
-            kpi_card("REVENUE", f"${df['Revenue'].iloc[-1]/1000:,.1f}", 'B', colors['primary']),
-            kpi_card("PROFIT", f"${df['Profit'].iloc[-1]/1000:,.1f}", 'B', colors['green']),
-            kpi_card("PROFIT MARGIN", f"{df['Profit_Margin'].iloc[-1]:.1f}", '%', colors['orange']),
-            kpi_card("EMPLOYEES", f"{df['Employees'].iloc[-1]/1000:,.0f}", 'K', colors['purple']),
-            kpi_card("ROE", f"{df['ROE'].iloc[-1]:.1f}", '%', colors['green']),
-        ], style={
-            'display': 'flex', 
-            'justifyContent': 'flex-start', 
-            'gap': '15px', 
-            'flexWrap': 'wrap',
-            'marginBottom': '30px'
-        }),
-
-        # Chart Row 1
-        html.Div([
-            # Revenue & Profit Chart
-            html.Div(
-                style={
-                    'flex': '2', 
-                    'marginRight': '15px',
-                    'backgroundColor': colors['card_bg'],
-                    'borderRadius': '12px',
-                    'padding': '20px',
-                    'border': f'1px solid {colors["gray"]}'
-                },
-                children=[
-                    dcc.Graph(
-                        figure=go.Figure(
-                            data=[
-                                go.Scatter(
-                                    x=df['Year'], 
-                                    y=df['Revenue']/1000, 
-                                    name='Revenue',
-                                    line=dict(width=4, color=colors['primary']),
-                                    hovertemplate='<b>%{x}</b><br>Revenue: $%{y:.1f}B<extra></extra>'
-                                ),
-                                go.Scatter(
-                                    x=df['Year'], 
-                                    y=df['Profit']/1000, 
-                                    name='Profit',
-                                    line=dict(width=4, color=colors['green']),
-                                    hovertemplate='<b>%{x}</b><br>Profit: $%{y:.1f}B<extra></extra>'
-                                )
-                            ]
-                        ).update_layout(
-                            plot_bgcolor=colors['card_bg'],
-                            paper_bgcolor=colors['card_bg'],
-                            font_color=colors['text'],
-                            title='Revenue & Profit Trend (Billions USD)',
-                            height=400,
-                            margin=dict(t=50, b=50, l=50, r=50),
-                            xaxis=dict(
-                                tickvals=df['Year'],
-                                tickangle=45,
-                                showgrid=True,
-                                gridcolor=colors['gray']
-                            ),
-                            yaxis=dict(
-                                showgrid=True,
-                                gridcolor=colors['gray'],
-                                title='Billions USD'
-                            ),
-                            legend=dict(
-                                orientation="h",
-                                yanchor="bottom",
-                                y=1.02,
-                                xanchor="center",
-                                x=0.5
-                            )
-                        ),
-                        config={'displayModeBar': False}
-                    )
-                ]
-            ),
+# Main layout
+app.layout = dbc.Container([
+    dcc.Store(id='theme-store', data='dark'),
+    dcc.Store(id='filtered-data', data=df.to_json(date_format='iso', orient='split')),
+    
+    # Header
+    create_glass_card([
+        dbc.Row([
+            dbc.Col([
+                html.Div([
+                    html.Img(
+                        src='https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg',
+                        style={'height': '50px', 'width': '50px', 'marginRight': '15px', 'filter': 'invert(1)'}
+                    ),
+                    html.Div([
+                        html.H1("Vision Pro Analytics", style={
+                            'color': COLOR_SCHEMES['dark']['text_primary'],
+                            'fontWeight': '700',
+                            'margin': '0',
+                            'fontSize': '32px'
+                        }),
+                        html.Div("Apple Inc. Financial Intelligence Platform", style={
+                            'color': COLOR_SCHEMES['dark']['text_secondary'],
+                            'fontSize': '14px'
+                        })
+                    ])
+                ], style={'display': 'flex', 'alignItems': 'center'})
+            ], width=6),
             
-            # Profit Share Pie Chart
-            html.Div(
-                style={
-                    'flex': '1', 
-                    'marginLeft': '15px',
-                    'backgroundColor': colors['card_bg'],
-                    'borderRadius': '12px',
-                    'padding': '20px',
-                    'border': f'1px solid {colors["gray"]}'
-                },
-                children=[
-                    dcc.Graph(
-                        figure=go.Figure(
-                            data=[
-                                go.Pie(
-                                    labels=['Net Profit', 'Expenses'],
-                                    values=[df['Profit'].iloc[-1], df['Revenue'].iloc[-1] - df['Profit'].iloc[-1]],
-                                    marker=dict(colors=[colors['green'], colors['gray']]),
-                                    hovertemplate='<b>%{label}</b><br>%{value:,.0f}M USD<br>%{percent}<extra></extra>',
-                                    textinfo='percent+label'
-                                )
-                            ]
-                        ).update_layout(
-                            plot_bgcolor=colors['card_bg'],
-                            paper_bgcolor=colors['card_bg'],
-                            font_color=colors['text'],
-                            title='2022 Revenue Breakdown',
-                            height=400,
-                            margin=dict(t=50, b=50, l=50, r=50),
-                            showlegend=False
-                        ),
-                        config={'displayModeBar': False}
-                    )
-                ]
-            )
-        ], style={
-            'display': 'flex', 
-            'marginTop': '20px',
-            'flexWrap': 'wrap'
-        }),
-
-        # Chart Row 2 - Additional Metrics
-        html.Div([
-            # Profit Margin Chart
-            html.Div(
-                style={
-                    'flex': '1',
-                    'marginRight': '15px',
-                    'backgroundColor': colors['card_bg'],
-                    'borderRadius': '12px',
-                    'padding': '20px',
-                    'border': f'1px solid {colors["gray"]}',
-                    'minWidth': '300px'
-                },
-                children=[
-                    dcc.Graph(
-                        figure=go.Figure(
-                            data=[
-                                go.Bar(
-                                    x=df['Year'],
-                                    y=df['Profit_Margin'],
-                                    name='Profit Margin',
-                                    marker_color=colors['orange'],
-                                    hovertemplate='<b>%{x}</b><br>Margin: %{y:.1f}%<extra></extra>'
-                                )
-                            ]
-                        ).update_layout(
-                            plot_bgcolor=colors['card_bg'],
-                            paper_bgcolor=colors['card_bg'],
-                            font_color=colors['text'],
-                            title='Profit Margin %',
-                            height=400,
-                            margin=dict(t=50, b=50, l=50, r=50),
-                            xaxis=dict(
-                                tickvals=df['Year'],
-                                tickangle=45,
-                                showgrid=True,
-                                gridcolor=colors['gray']
-                            ),
-                            yaxis=dict(
-                                showgrid=True,
-                                gridcolor=colors['gray'],
-                                title='Percentage %'
+            dbc.Col([
+                dbc.Row([
+                    dbc.Col([
+                        html.Div([
+                            dbc.Switch(
+                                id="theme-toggle",
+                                label="Dark Mode",
+                                value=True
                             )
-                        ),
-                        config={'displayModeBar': False}
-                    )
-                ]
-            ),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'})
+                    ], width=4),
+                    
+                    dbc.Col([
+                        dcc.Dropdown(
+                            id='metric-selector',
+                            options=[
+                                {'label': 'Executive Overview', 'value': 'overview'},
+                                {'label': 'Growth Analytics', 'value': 'growth'},
+                                {'label': 'Innovation Metrics', 'value': 'innovation'}
+                            ],
+                            value='overview',
+                            clearable=False
+                        )
+                    ], width=8)
+                ])
+            ], width=6)
+        ])
+    ], 'dark', {'marginBottom': '20px'}),
+    
+    # Control Panel
+    create_glass_card([
+        dbc.Row([
+            dbc.Col([
+                html.Div("Analysis Period", style={
+                    'color': COLOR_SCHEMES['dark']['text_primary'],
+                    'fontSize': '16px',
+                    'fontWeight': '600',
+                    'marginBottom': '15px'
+                }),
+                dcc.RangeSlider(
+                    id='year-slider',
+                    min=df['Year'].min(),
+                    max=df['Year'].max(),
+                    value=[df['Year'].max() - 4, df['Year'].max()],
+                    marks={str(year): str(year) for year in df['Year'][::2]},
+                    step=1,
+                    tooltip={"placement": "bottom", "always_visible": False}
+                )
+            ], width=8),
+            
+            dbc.Col([
+                html.Div("Product Focus", style={
+                    'color': COLOR_SCHEMES['dark']['text_secondary'],
+                    'fontSize': '14px',
+                    'fontWeight': '600',
+                    'marginBottom': '10px'
+                }),
+                dcc.Dropdown(
+                    id='product-selector',
+                    options=[{'label': p, 'value': p} for p in products],
+                    value='iPhone',
+                    clearable=False,
+                    style={
+                        'backgroundColor': 'rgba(255,255,255,0.1)',
+                        'color': COLOR_SCHEMES['dark']['text_primary']
+                    }
+                )
+            ], width=4)
+        ])
+    ], 'dark', {'marginBottom': '20px'}),
+    
+    # KPI Cards
+    html.Div(id='kpi-container', style={'marginBottom': '20px'}),
+    
+    # Main Content
+    dbc.Row([
+        dbc.Col([
+            create_glass_card([
+                html.H3("Financial Performance", style={
+                    'color': COLOR_SCHEMES['dark']['text_primary'],
+                    'marginBottom': '20px'
+                }),
+                dcc.Graph(id='main-chart')
+            ], 'dark')
+        ], lg=8),
+        
+        dbc.Col([
+            create_glass_card([
+                html.H4("AI Insights", style={
+                    'color': COLOR_SCHEMES['dark']['text_primary'],
+                    'marginBottom': '20px'
+                }),
+                html.Div(id='insights-container')
+            ], 'dark')
+        ], lg=4)
+    ], style={'marginBottom': '20px'}),
+    
+    # Charts Row
+    dbc.Row([
+        dbc.Col([
+            create_glass_card([
+                html.H4("Product Portfolio", style={
+                    'color': COLOR_SCHEMES['dark']['text_primary'],
+                    'marginBottom': '15px'
+                }),
+                dcc.Graph(id='product-chart')
+            ], 'dark')
+        ], lg=4),
+        
+        dbc.Col([
+            create_glass_card([
+                html.H4("Quarterly Trends", style={
+                    'color': COLOR_SCHEMES['dark']['text_primary'],
+                    'marginBottom': '15px'
+                }),
+                dcc.Graph(id='quarterly-chart')
+            ], 'dark')
+        ], lg=4),
+        
+        dbc.Col([
+            create_glass_card([
+                html.H4("Efficiency Metrics", style={
+                    'color': COLOR_SCHEMES['dark']['text_primary'],
+                    'marginBottom': '15px'
+                }),
+                dcc.Graph(id='efficiency-chart')
+            ], 'dark')
+        ], lg=4)
+    ])
+], fluid=True, style={
+    'background': COLOR_SCHEMES['dark']['background'],
+    'color': COLOR_SCHEMES['dark']['text_primary'],
+    'minHeight': '100vh',
+    'padding': '20px'
+}, id='main-container')
 
-            # ROE Chart
-            html.Div(
-                style={
-                    'flex': '1',
-                    'marginLeft': '15px',
-                    'backgroundColor': colors['card_bg'],
-                    'borderRadius': '12px',
-                    'padding': '20px',
-                    'border': f'1px solid {colors["gray"]}',
-                    'minWidth': '300px'
-                },
-                children=[
-                    dcc.Graph(
-                        figure=go.Figure(
-                            data=[
-                                go.Scatter(
-                                    x=df['Year'],
-                                    y=df['ROE'],
-                                    name='ROE',
-                                    line=dict(width=4, color=colors['purple']),
-                                    hovertemplate='<b>%{x}</b><br>ROE: %{y:.1f}%<extra></extra>'
-                                )
-                            ]
-                        ).update_layout(
-                            plot_bgcolor=colors['card_bg'],
-                            paper_bgcolor=colors['card_bg'],
-                            font_color=colors['text'],
-                            title='Return on Equity (ROE) %',
-                            height=400,
-                            margin=dict(t=50, b=50, l=50, r=50),
-                            xaxis=dict(
-                                tickvals=df['Year'],
-                                tickangle=45,
-                                showgrid=True,
-                                gridcolor=colors['gray']
-                            ),
-                            yaxis=dict(
-                                showgrid=True,
-                                gridcolor=colors['gray'],
-                                title='ROE %'
-                            )
-                        ),
-                        config={'displayModeBar': False}
-                    )
-                ]
-            )
-        ], style={
-            'display': 'flex',
-            'marginTop': '20px',
-            'flexWrap': 'wrap'
-        })
-    ]
+# Callbacks
+@app.callback(
+    [Output('theme-store', 'data'),
+     Output('main-container', 'style')],
+    [Input('theme-toggle', 'value')]
 )
+def update_theme(dark_mode):
+    theme = 'dark' if dark_mode else 'light'
+    colors = COLOR_SCHEMES[theme]
+    
+    container_style = {
+        'background': colors['background'],
+        'color': colors['text_primary'],
+        'minHeight': '100vh',
+        'padding': '20px'
+    }
+    
+    return theme, container_style
+
+@app.callback(
+    Output('filtered-data', 'data'),
+    [Input('year-slider', 'value')]
+)
+def update_filtered_data(year_range):
+    filtered_df = df[(df['Year'] >= year_range[0]) & (df['Year'] <= year_range[1])]
+    return filtered_df.to_json(date_format='iso', orient='split')
+
+@app.callback(
+    Output('kpi-container', 'children'),
+    [Input('filtered-data', 'data'),
+     Input('theme-store', 'data'),
+     Input('product-selector', 'value')]
+)
+def update_kpis(data_json, theme, selected_product):
+    if not data_json:
+        return html.Div("Loading financial data...", style={'textAlign': 'center', 'padding': '40px'})
+    
+    try:
+        filtered_df = pd.read_json(data_json, orient='split')
+    except:
+        return html.Div("Error loading data", style={'textAlign': 'center', 'padding': '40px'})
+    
+    colors = COLOR_SCHEMES[theme]
+    
+    if len(filtered_df) == 0:
+        return html.Div("No data available for selected range", style={'textAlign': 'center', 'padding': '40px'})
+    
+    latest = filtered_df.iloc[-1]
+    previous = filtered_df.iloc[-2] if len(filtered_df) > 1 else latest
+    
+    # Calculate changes
+    revenue_change = ((latest['Revenue'] - previous['Revenue']) / previous['Revenue']) * 100 if previous['Revenue'] != 0 else 0
+    profit_change = ((latest['Profit'] - previous['Profit']) / previous['Profit']) * 100 if previous['Profit'] != 0 else 0
+    market_cap_change = ((latest['Market_Cap'] - previous['Market_Cap']) / previous['Market_Cap']) * 100 if previous['Market_Cap'] != 0 else 0
+    
+    # Calculate product-specific revenue
+    product_revenue = product_df[
+        (product_df['Product'] == selected_product) & 
+        (product_df['Year'] == latest['Year'])
+    ]['Revenue'].sum()
+    
+    product_previous = product_df[
+        (product_df['Product'] == selected_product) & 
+        (product_df['Year'] == previous['Year'])
+    ]['Revenue'].sum() if len(filtered_df) > 1 else product_revenue
+    
+    product_change = ((product_revenue - product_previous) / product_previous) * 100 if product_previous != 0 else 0
+    
+    return dbc.Row([
+        dbc.Col(create_kpi_card(
+            "TOTAL REVENUE", f"{latest['Revenue']/1000:,.1f}", 'B', revenue_change, theme, 'accent_blue'
+        )),
+        dbc.Col(create_kpi_card(
+            "NET PROFIT", f"{latest['Profit']/1000:,.1f}", 'B', profit_change, theme, 'accent_green'
+        )),
+        dbc.Col(create_kpi_card(
+            "MARKET CAP", f"{latest['Market_Cap']/1000:,.0f}", 'B', market_cap_change, theme, 'accent_purple'
+        )),
+        dbc.Col(create_kpi_card(
+            f"{selected_product.upper()} REV", f"{product_revenue/1000:,.1f}", 'B', product_change, theme, 'accent_teal'
+        ))
+    ])
+
+@app.callback(
+    Output('main-chart', 'figure'),
+    [Input('filtered-data', 'data'),
+     Input('theme-store', 'data'),
+     Input('product-selector', 'value'),
+     Input('metric-selector', 'value')]
+)
+def update_main_chart(data_json, theme, selected_product, metric):
+    if not data_json:
+        return go.Figure()
+    
+    try:
+        filtered_df = pd.read_json(data_json, orient='split')
+    except:
+        return go.Figure()
+    
+    colors = COLOR_SCHEMES[theme]
+    
+    fig = go.Figure()
+    
+    if metric == 'overview':
+        # Revenue and Profit overview
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Year'],
+            y=filtered_df['Revenue']/1000,
+            name='Revenue',
+            line=dict(width=4, color=colors['accent_blue']),
+            fill='tozeroy',
+            fillcolor=f'{colors["accent_blue"][:-1]}, 0.2)',
+            hovertemplate='<b>Year %{x}</b><br>Revenue: $%{y:.1f}B<extra></extra>'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Year'],
+            y=filtered_df['Profit']/1000,
+            name='Profit',
+            line=dict(width=4, color=colors['accent_green']),
+            fill='tozeroy',
+            fillcolor=f'{colors["accent_green"][:-1]}, 0.2)',
+            hovertemplate='<b>Year %{x}</b><br>Profit: $%{y:.1f}B<extra></extra>'
+        ))
+        
+        title = "Revenue & Profit Trend"
+        yaxis_title = "Billions USD"
+        
+    elif metric == 'growth':
+        # Growth rates
+        filtered_df['Revenue_Growth'] = filtered_df['Revenue'].pct_change() * 100
+        filtered_df['Profit_Growth'] = filtered_df['Profit'].pct_change() * 100
+        
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Year'][1:],
+            y=filtered_df['Revenue_Growth'][1:],
+            name='Revenue Growth',
+            line=dict(width=4, color=colors['accent_blue']),
+            hovertemplate='<b>Year %{x}</b><br>Growth: %{y:.1f}%<extra></extra>'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Year'][1:],
+            y=filtered_df['Profit_Growth'][1:],
+            name='Profit Growth',
+            line=dict(width=4, color=colors['accent_green']),
+            hovertemplate='<b>Year %{x}</b><br>Growth: %{y:.1f}%<extra></extra>'
+        ))
+        
+        title = "Growth Rates (%)"
+        yaxis_title = "Percentage Growth"
+        
+    else:  # innovation
+        # R&D and Innovation metrics
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Year'],
+            y=filtered_df['R&D_Spend'],
+            name='R&D Investment',
+            line=dict(width=4, color=colors['accent_orange']),
+            fill='tozeroy',
+            fillcolor=f'{colors["accent_orange"][:-1]}, 0.2)',
+            hovertemplate='<b>Year %{x}</b><br>R&D: $%{y:,.0f}M<extra></extra>'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Year'],
+            y=filtered_df['R&D_Intensity'],
+            name='R&D Intensity',
+            line=dict(width=4, color=colors['accent_purple'], dash='dash'),
+            yaxis='y2',
+            hovertemplate='<b>Year %{x}</b><br>Intensity: %{y:.1f}%<extra></extra>'
+        ))
+        
+        title = "Innovation Investment"
+        yaxis_title = "R&D Spend (Millions USD)"
+    
+    layout = create_chart_layout(title, theme, 450)
+    layout.update(
+        xaxis=dict(
+            tickvals=filtered_df['Year'],
+            gridcolor=colors['grid_color'],
+            title='Year'
+        ),
+        yaxis=dict(
+            title=yaxis_title,
+            gridcolor=colors['grid_color']
+        )
+    )
+    
+    if metric == 'innovation':
+        layout.update(
+            yaxis2=dict(
+                title='R&D Intensity (%)',
+                overlaying='y',
+                side='right',
+                gridcolor=colors['grid_color']
+            )
+        )
+    
+    fig.update_layout(**layout)
+    return fig
+
+@app.callback(
+    Output('product-chart', 'figure'),
+    [Input('filtered-data', 'data'),
+     Input('theme-store', 'data'),
+     Input('product-selector', 'value')]
+)
+def update_product_chart(data_json, theme, selected_product):
+    if not data_json:
+        return go.Figure()
+    
+    try:
+        filtered_df = pd.read_json(data_json, orient='split')
+    except:
+        return go.Figure()
+    
+    colors = COLOR_SCHEMES[theme]
+    
+    latest_year = filtered_df['Year'].max()
+    product_data = product_df[product_df['Year'] == latest_year]
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=product_data['Product'],
+        values=product_data['Revenue'],
+        hole=0.5,
+        marker=dict(colors=[colors['accent_blue'], colors['accent_green'], colors['accent_orange'], 
+                           colors['accent_purple'], colors['accent_teal']]),
+        hovertemplate='<b>%{label}</b><br>$%{value:,.0f}M<br>%{percent}<extra></extra>'
+    )])
+    
+    fig.update_layout(create_chart_layout("Product Revenue Mix", theme, 300))
+    return fig
+
+@app.callback(
+    Output('quarterly-chart', 'figure'),
+    [Input('filtered-data', 'data'),
+     Input('theme-store', 'data')]
+)
+def update_quarterly_chart(data_json, theme):
+    if not data_json:
+        return go.Figure()
+    
+    try:
+        filtered_df = pd.read_json(data_json, orient='split')
+    except:
+        return go.Figure()
+    
+    colors = COLOR_SCHEMES[theme]
+    
+    # Get quarters for the selected years
+    min_year = filtered_df['Year'].min()
+    max_year = filtered_df['Year'].max()
+    recent_quarters = quarterly_data[
+        (quarterly_data['Date'].dt.year >= min_year) & 
+        (quarterly_data['Date'].dt.year <= max_year)
+    ].tail(12)
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=recent_quarters['Quarter'],
+        y=recent_quarters['Revenue']/1000,
+        name='Quarterly Revenue',
+        marker_color=colors['accent_blue'],
+        hovertemplate='<b>%{x}</b><br>Revenue: $%{y:.1f}B<extra></extra>'
+    ))
+    
+    fig.update_layout(create_chart_layout("Quarterly Revenue Trend", theme, 300))
+    fig.update_layout(
+        xaxis=dict(tickangle=45, gridcolor=colors['grid_color']),
+        yaxis=dict(title='Billions USD', gridcolor=colors['grid_color'])
+    )
+    
+    return fig
+
+@app.callback(
+    Output('efficiency-chart', 'figure'),
+    [Input('filtered-data', 'data'),
+     Input('theme-store', 'data')]
+)
+def update_efficiency_chart(data_json, theme):
+    if not data_json:
+        return go.Figure()
+    
+    try:
+        filtered_df = pd.read_json(data_json, orient='split')
+    except:
+        return go.Figure()
+    
+    colors = COLOR_SCHEMES[theme]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=filtered_df['Year'],
+        y=filtered_df['Profit_Margin'],
+        name='Profit Margin',
+        line=dict(width=3, color=colors['accent_green']),
+        hovertemplate='<b>Year %{x}</b><br>Margin: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=filtered_df['Year'],
+        y=filtered_df['ROE'],
+        name='Return on Equity',
+        line=dict(width=3, color=colors['accent_blue']),
+        hovertemplate='<b>Year %{x}</b><br>ROE: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=filtered_df['Year'],
+        y=filtered_df['Revenue_Per_Employee']/1000,
+        name='Revenue/Employee',
+        line=dict(width=3, color=colors['accent_orange']),
+        hovertemplate='<b>Year %{x}</b><br>Revenue/Employee: $%{y:.1f}M<extra></extra>'
+    ))
+    
+    fig.update_layout(create_chart_layout("Efficiency Metrics", theme, 300))
+    fig.update_layout(
+        xaxis=dict(gridcolor=colors['grid_color']),
+        yaxis=dict(title='Percentage (%)', gridcolor=colors['grid_color'])
+    )
+    
+    return fig
+
+@app.callback(
+    Output('insights-container', 'children'),
+    [Input('filtered-data', 'data'),
+     Input('theme-store', 'data'),
+     Input('product-selector', 'value')]
+)
+def update_insights(data_json, theme, selected_product):
+    if not data_json:
+        return html.Div("Analyzing data...", style={'textAlign': 'center', 'padding': '20px'})
+    
+    try:
+        filtered_df = pd.read_json(data_json, orient='split')
+    except:
+        return html.Div("Error analyzing data", style={'textAlign': 'center', 'padding': '20px'})
+    
+    colors = COLOR_SCHEMES[theme]
+    
+    if len(filtered_df) < 2:
+        return html.Div("Select a wider date range for analysis", style={'textAlign': 'center', 'padding': '20px'})
+    
+    latest = filtered_df.iloc[-1]
+    oldest = filtered_df.iloc[0]
+    
+    # Calculate insights
+    periods = len(filtered_df)
+    revenue_growth = ((latest['Revenue'] - oldest['Revenue']) / oldest['Revenue']) * 100
+    profit_growth = ((latest['Profit'] - oldest['Profit']) / oldest['Profit']) * 100
+    efficiency_gain = ((latest['Revenue_Per_Employee'] - oldest['Revenue_Per_Employee']) / oldest['Revenue_Per_Employee']) * 100
+    
+    # Product-specific insights
+    product_revenue = product_df[
+        (product_df['Product'] == selected_product) & 
+        (product_df['Year'] == latest['Year'])
+    ]['Revenue'].sum()
+    
+    product_oldest = product_df[
+        (product_df['Product'] == selected_product) & 
+        (product_df['Year'] == oldest['Year'])
+    ]['Revenue'].sum()
+    
+    product_growth = ((product_revenue - product_oldest) / product_oldest) * 100 if product_oldest != 0 else 0
+    product_share = (product_revenue / latest['Revenue']) * 100
+    
+    insights = [
+        f"📈 Total revenue growth: {revenue_growth:+.1f}% over {periods} years",
+        f"💰 Profit growth: {profit_growth:+.1f}% over {periods} years", 
+        f"⚡ Efficiency improvement: {efficiency_gain:+.1f}% per employee",
+        f"📱 {selected_product} growth: {product_growth:+.1f}% over {periods} years",
+        f"🎯 {selected_product} share: {product_share:.1f}% of total revenue"
+    ]
+    
+    return html.Div([
+        html.Div(insight, style={
+            'padding': '12px',
+            'marginBottom': '10px',
+            'background': f'{colors["accent_blue"][:-1]}, 0.1)',
+            'borderRadius': '12px',
+            'border': f'1px solid {colors["accent_blue"][:-1]}, 0.3)',
+            'fontSize': '14px'
+        }) for insight in insights
+    ])
 
 if __name__ == '__main__':
-
     app.run(debug=True)
